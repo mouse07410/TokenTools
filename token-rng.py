@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import PyKCS11
 import threading
 import fcntl
@@ -11,7 +13,7 @@ import binascii
 
 # Defaults for the program constants, DO NOT change them here, insert your own
 # values in /etc/token-tools.conf
-tokenrng_defaults = {'pkcs11_library': '/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so',
+tokenrng_defaults = {'pkcs11_library': '/Library/OpenSC/lib/opensc-pkcs11.so',
                         'reader_slot': 0,
                   'random_chunk_size': 128,
                       'entropy_ratio': 2,
@@ -27,6 +29,7 @@ tokenrng_config.read('/etc/token-tools.conf')
 """
 
 FS_DEV_RANDOM = '/dev/random'
+# the following is not available on Mac OS X
 PROC_ENTROPY_AVAIL = '/proc/sys/kernel/random/entropy_avail'
 
 DEBUG = tokenrng_config.getboolean('Global', 'debug',
@@ -36,7 +39,6 @@ DEBUG = tokenrng_config.getboolean('Global', 'debug',
 # cryptographic token, defaults to OpenSC
 PKCS11_LIBRARY = tokenrng_config.get('Global', 'pkcs11_library',
                                      fallback=tokenrng_defaults['pkcs11_library'])
-
 # Which reader slot is the token connected to, should be zero when only one
 # token is ever connected
 READER_SLOT = tokenrng_config.getint('Global', 'reader_slot',
@@ -128,9 +130,13 @@ def pkcs11_reset(library=None):
                 log.error(pkcs11_api.getSlotList())
             time.sleep(3)
 
+# Does not work properly (and is not needed) on Mac
 def print_entropy_avail():
-    with open(PROC_ENTROPY_AVAIL, 'r') as entropy_avail:
-        log.debug('Entropy in pool: %s' % entropy_avail.readline())
+    if sys.platform == "darwin":
+        log.debug('Entropy in pool: enough...')
+    else:
+        with open(PROC_ENTROPY_AVAIL, 'r') as entropy_avail:
+            log.debug('Entropy in pool: %s' % entropy_avail.readline())
 
 
 # main program loop
@@ -147,14 +153,20 @@ def run_loop():
             if token_session is None:
                 pkcs11_reset(library=PKCS11_LIBRARY)
             random_sample = pkcs11_getrandom()
+            #log.info('Random data length: %d bytes, hex value: %s' %
+            #         (len(random_sample),binascii.hexlify(random_sample)))
             if random_sample is not None:
                 fmt = 'ii%is' % RANDOM_CHUNK_SIZE
                 packed_data = struct.pack(fmt,
                                           len(random_sample) * ENTROPY_RATIO,
                                           len(random_sample),
                                           bytes(random_sample))
-                with open(FS_DEV_RANDOM, 'a+') as dev_random:
-                    fcntl.ioctl(dev_random, RNDADDENTROPY, packed_data)
+                if sys.platform =="darwin":
+                    with open(FS_DEV_RANDOM, 'ba+') as dev_random:
+                        dev_random.write(packed_data)
+                else:
+                    with open(FS_DEV_RANDOM, 'a+') as dev_random:
+                        fcntl.ioctl(dev_random, RNDADDENTROPY, packed_data)
                 print_entropy_avail()
             else:
                 time.sleep(1)
