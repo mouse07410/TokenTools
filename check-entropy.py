@@ -16,9 +16,11 @@ PROC_ENTROPY_AVAIL = '/proc/sys/kernel/random/entropy_avail'
 
 
 def print_entropy_avail():
-    return 128
-    #with open(PROC_ENTROPY_AVAIL, 'r') as entropy_avail:
-     #   log.info('Entropy in pool: %s' % entropy_avail.readline())
+    if sys.platform == "darwin":
+        log.info('Entropy in pool: enough...')
+    else:
+        with open(PROC_ENTROPY_AVAIL, 'r') as entropy_avail:
+            log.info('Entropy in pool: %s' % entropy_avail.readline())
 
 
 def run_loop():
